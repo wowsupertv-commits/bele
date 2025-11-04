@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="kn">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BELE APP — ಸ್ಥಳೀಯ ಕೆಲಸಗಾರರು</title>
+  <style>
+    /* Simple responsive styling */
+    :root{--accent:#107c10;--muted:#666}
+    *{box-sizing:border-box}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;line-height:1.4;margin:0;color:#222}
+    header{background:var(--accent);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between}
+    header h1{font-size:18px;margin:0}
+    .container{max-width:1000px;margin:18px auto;padding:0 16px}
+    .search-row{display:flex;gap:10px;align-items:center;margin-bottom:12px}
+    .search-row input, .search-row select{padding:10px;border:1px solid #ddd;border-radius:6px;flex:1}
+    .btn{background:var(--accent);color:#fff;padding:10px 12px;border:none;border-radius:6px;cursor:pointer}
+
+    /* grid of worker cards */
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+    .card{border:1px solid #eee;border-radius:8px;padding:12px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.03)}
+    .card img{width:56px;height:56px;border-radius:50%;object-fit:cover;margin-right:10px}
+    .card .top{display:flex;align-items:center}
+    .skill{display:inline-block;background:#f1f1f1;padding:6px 8px;border-radius:999px;font-size:12px;margin-top:8px}
+    .muted{color:var(--muted);font-size:13px}
+
+    /* forms */
+    form{background:#fff;padding:12px;border:1px solid #eee;border-radius:8px}
+    label{display:block;font-weight:600;margin-top:8px}
+    input[type=text], input[type=tel], textarea, select{width:100%;padding:10px;margin-top:6px;border:1px solid #ddd;border-radius:6px}
+
+    footer{padding:18px;text-align:center;color:var(--muted)}
+
+    /* responsive tweaks */
+    @media(max-width:600px){header h1{font-size:16px}.search-row{flex-direction:column;align-items:stretch}}
+
+// Firebase initialized ಇದೆ ಎಂದು ಒಪ್ಪಿಕೊಳ್ಳೋಣ
+// const storage = firebase.storage();
+
+async function uploadWorkPhotos(files) {
+  const urls = [];
+  for (const file of files) {
+    const ref = storage.ref().child('work_photos/' + Date.now() + '_' + file.name);
+    await ref.put(file);
+    const url = await ref.getDownloadURL();
+    urls.push(url);
+  }
+  return urls;
+}
+
+async function registerWorker(e) {
+  e.preventDefault();
+  const f = e.target;
+
+  // ಕೆಲಸದ ಚಿತ್ರಗಳನ್ನು ಅಪ್ಲೋಡ್ ಮಾಡಿ
+  const workFiles = f.workPhotos.files;
+  let workPhotoURLs = [];
+  if (workFiles.length > 0) {
+    workPhotoURLs = await uploadWorkPhotos(workFiles);
+  }
+
+  const data = {
+    id: Date.now(),
+    name: f.name.value.trim(),
+    phone: f.phone.value.trim(),
+    skill: f.skill.value.trim(),
+    location: f.location.value.trim(),
+    bio: f.bio.value.trim(),
+    photo: f.photo.value.trim() || 'https://i.pravatar.cc/100',
+    workPhotos: workPhotoURLs, // Add new array here
+  };
+
+  // Firestore ಗೆ save ಮಾಡಿ
+  await firestore.collection('workers').doc(data.id.toString()).set(data);
+  alert('ನೋಂದಣಿ ಯಶಸ್ವಿ! ನಿಮ್ಮ ಕೆಲಸದ ಚಿತ್ರಗಳು ಸೇರಿಸಲಾಗಿದೆ.');
+  f.reset();
+  hideRegister();
+}
+
+  </style>
+</head>
+<body>
+  <header>
+    <h1>BELE APP — ಸ್ಥಳೀಯ ಕೆಲಸಗಾರರನ್ನು ಸಂಪರ್ಕಿಸಿ</h1>
+    <div>
+      <button class="btn" onclick="showRegister()">ಕೆಲಸಗಾರರಾಗಿ ಹೊಸದಾಗಿ ಸೇರು</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Search / filters -->
+    <div class="search-row">
+      <input id="q" type="text" placeholder="ಶೀಘ್ರ ಹುಡುಕಿ: ಉದಾಹরণ: ಪ್ಲಂಬರ್, ಎಲೆಕ್ಟ್ರಿಶಿಯನ್" />
+      <select id="district">
+        <option value="">ಊರು/ಜಿಲ್ಲೆ ಆಯ್ಕೆಮಾಡಿ</option>
+        <option value="bidar">ಬೀದರ್</option>
+        <option value="gulbarga">ಗulgಬರ್ಗಾ</option>
+        <option value="other">ಇತರ</option>
+      </select>
+      <button class="btn" onclick="searchWorkers()">ಹುಡುಕಿ</button>
+    </div>
+
+    <!-- Workers grid -->
+    <section>
+      <h2>ಲಭ್ಯವಿರುವ ಕೆಲಸಗಾರರು</h2>
+      <div id="workersGrid" class="grid">
+        <!-- JS will populate -->
+      </div>
+    </section>
+
+    <hr style="margin:18px 0;">
+
+    <!-- Register form (hidden by default) -->
+    <section id="registerSection" style="display:none">
+      <h2>ಕೆಲಸಗಾರರಾಗಿ ನೋಂದಾಯಿಸು</h2>
+      <form id="registerForm" onsubmit="return registerWorker(event)">
+        <label>ಪೂರ್ಣ ಹೆಸರು</label>
+        <input name="name" required />
+        <label>ಮೊಬೈಲ್ ಸಂಖ್ಯೆ (OTP ಲಾಗಿನ್ ಬಳಸಬಹುದು)</label>
+        <input name="phone" type="tel" required />
+        <label>ವೃತ್ತಿ (ಉದಾ: Plumber, Electrician)</label>
+        <input name="skill" required />
+        <label>ಸ್ಥಳ (ನಗರ/ಜಿಲ್ಲೆ)</label>
+        <input name="location" required />
+        <label>ಸ್ವಲ್ಪ ಪರಿಚಯ / ಅನುಭವ</label>
+        <textarea name="bio" rows="3"></textarea>
+        <label>ಫೋಟೋ URL (ಅಥವಾ ಅಪ್ಲೋಡ್ ಗಾಗಿ ಬದಿಗಡೆ ಇನ್ಫೋ)</label>
+        <input name="photo" placeholder="https://..." />
+        <div style="margin-top:12px;display:flex;gap:8px">
+          <button class="btn" type="submit">ನೋಂದಾಯಿಸು</button>
+          <button type="button" onclick="hideRegister()" style="padding:10px;border-radius:6px">ರದ್ದುಮಾಡು</button>
+        </div>
+<label>ಕೆಲಸದ ಫೋಟೋಗಳು (3 ಚಿತ್ರಗಳವರೆಗೆ)</label>
+<input name="workPhotos" type="file" accept="image/*" multiple>
+      </form>
+    </section>
+
+    <hr style="margin:18px 0;">
+
+    <!-- Small admin login placeholder -->
+    <section>
+      <h3>ಆಡ್‌ಮಿನ್‍ (ಸಣ್ಣ ತುದಿ)</h3>
+      <p class="muted">ನೀವು ಪ್ರಾರಂಭಕ್ಕೆ Firebase ಅಥವಾ ನಿಮ್ಮ ಬೆಕ್‌ಎಂಡ್‍ ಬಳಸಬಹುದು — ಕೆಳಗೆ ಸೂಚನೆಗಳು ಇವೆ.</p>
+    </section>
+
+  </main>
+
+  <footer>
+    BELE APP — Local service connect • ತಯಾರಿಸಿದವು: ನಿಮ್ಮ ತಂಡ
+  </footer>
+
+  <script>
+    // Simple in-memory demo data. Replace with Firestore fetch in production.
+    const demo = [
+      {id:1,name:'ಮುರಳಿ',skill:'Electrician',location:'ಬೀದರ್',bio:'5 ವರ್ಷ ಅನುಭವ',photo:'https://i.pravatar.cc/100?img=3',rating:4.5},
+      {id:2,name:'ರಮೇಶ್',skill:'Plumber',location:'ಬೀದರ್',bio:'ಫಾಸ್ಟರ್ ಸರ್ವೀಸ್',photo:'https://i.pravatar.cc/100?img=5',rating:4.2},
+      {id:3,name:'ಚಂದ್ರಿಕಾ',skill:'Home Cleaner',location:'ಗುಲ್ಬರ್ಗಾ',bio:'ನಿರ್ವಿಚಾರಕ',photo:'https://i.pravatar.cc/100?img=8',rating:4.8}
+    ];
+
+    function renderWorkers(list){
+      const grid = document.getElementById('workersGrid');
+      grid.innerHTML = '';
+      if(!list.length) grid.innerHTML = '<p class="muted">ಯಾವುದೇ ಕೆಲಸಗಾರರು ಕಂಡುಬಂದಿಲ್ಲ.</p>';
+      list.forEach(w=>{
+        const div = document.createElement('div'); div.className='card';
+        div.innerHTML = `
+          <div class="top"><img src="${w.photo}" alt="${w.name}" onerror="this.src='https://i.pravatar.cc/100'"/><div>
+            <div style="font-weight:700">${w.name}</div>
+            <div class="muted">${w.skill} • ${w.location}</div>
+          </div></div>
+          <div class="skill">${w.bio || ''}</div>
+          <div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center">
+            <small class="muted">⭐ ${w.rating || '—'}</small>
+            <div>
+              <button class="btn" onclick="contact('${w.name}','${w.phone||''}')">ಸಂಪರ್ಕಿಸಿ</button>
+            </div>
+          </div>
+        `;
+        grid.appendChild(div);
+      })
+    }
+
+    renderWorkers(demo);
+
+    function searchWorkers(){
+      const q = document.getElementById('q').value.trim().toLowerCase();
+      const district = document.getElementById('district').value;
+      const filtered = demo.filter(w=>{
+        const matchesQ = !q || (w.name+w.skill+w.bio).toLowerCase().includes(q);
+        const matchesD = !district || w.location.toLowerCase().includes(district);
+        return matchesQ && matchesD;
+      });
+      renderWorkers(filtered);
+    }
+
+    function showRegister(){document.getElementById('registerSection').style.display='block';window.scrollTo(0,document.body.scrollHeight)}
+    function hideRegister(){document.getElementById('registerSection').style.display='none'}
+
+    function registerWorker(e){
+      e.preventDefault();
+      const f = e.target;
+      const data = {
+        id: Date.now(),
+        name: f.name.value.trim(),
+        phone: f.phone.value.trim(),
+        skill: f.skill.value.trim(),
+        location: f.location.value.trim(),
+        bio: f.bio.value.trim(),
+        photo: f.photo.value.trim() || 'https://i.pravatar.cc/100'
+      };
+      // In production: save to Firestore / your backend
+      demo.unshift(data);
+      renderWorkers(demo);
+      alert('ನೋಂದಣಿ ಯಶಸ್ವಿ — ನಿಮ್ಮ ಪ್ರೊಫೈಲ್ ಪರಿಶೀಲನೆಗೆ ಸಲ್ಲಿಸಲಾಗುತ್ತದೆ (ಡೆಮೋ).');
+      f.reset(); hideRegister();
+    }
+
+    function contact(name,phone){
+      // In production: open chat / call / Whatsapp. For demo just alert
+      alert(name + ' ಅವರನ್ನು ಸಂಪರ್ಕಿಸಲು ಕರೆ ಅಥವಾ ವಾಟ್ಸ್ಯಾಪ್ ಮಾಡಿ.');
+    }
+
+    /*
+      NEXT STEPS (recommended):
+      1) Create a Firebase project and paste your Firebase config below. Use Firebase Auth (phone/email) and Firestore for storing worker profiles.
+      2) Replace demo[] with fetch from Firestore and update registerWorker() to save to Firestore.
+      3) Add image upload (Firebase Storage) or let workers provide image URLs.
+      4) Add admin dashboard (simple protected page) to approve/verify profiles.
+      5) Deploy to Netlify / Vercel / Firebase Hosting.
+
+      Example Firebase snippet (add your config and uncomment):
+
+      // const firebaseConfig = { apiKey: "..." }
+      // import firebase scripts, init app, use firebase.firestore() etc.
+    */
+  </script>
+</body>
+</html>
